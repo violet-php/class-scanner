@@ -10,5 +10,4 @@ namespace Violet\ClassScanner\Exception;
  */
 interface ClassScannerException extends \Throwable
 {
-
 }

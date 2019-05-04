@@ -10,5 +10,4 @@ namespace Sample\Space;
  */
 class SubClass
 {
-
 }

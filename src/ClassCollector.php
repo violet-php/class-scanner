@@ -17,11 +17,22 @@ use Violet\ClassScanner\Exception\UndefinedClassException;
  */
 class ClassCollector extends NodeVisitorAbstract
 {
+    /** @var NameContext */
     private $context;
+
+    /** @var string[] */
     private $map;
+
+    /** @var string[] */
     private $parentNames;
+
+    /** @var array[] */
     private $children;
+
+    /** @var int[] */
     private $types;
+
+    /** @var string[] */
     private $collected;
 
     public function __construct()
@@ -51,7 +62,7 @@ class ClassCollector extends NodeVisitorAbstract
 
     public function getCollected(): array
     {
-        return array_values(array_intersect_key($this->map, $this->collected));
+        return $this->collected;
     }
 
     public function loadMissing(bool $autoload): void
@@ -72,7 +83,7 @@ class ClassCollector extends NodeVisitorAbstract
         }
 
         while ($parents) {
-            $classes = $this->loadParentReflections(array_shift($parents));
+            $classes = $this->loadParentReflections(array_pop($parents));
 
             if ($classes) {
                 array_push($parents, ... $classes);
@@ -87,6 +98,10 @@ class ClassCollector extends NodeVisitorAbstract
         return class_exists($name, $autoload) || interface_exists($name, false) || trait_exists($name, false);
     }
 
+    /**
+     * @param \ReflectionClass $child
+     * @return \ReflectionClass[]
+     */
     private function loadParentReflections(\ReflectionClass $child): array
     {
         $parents = [];
@@ -107,12 +122,12 @@ class ClassCollector extends NodeVisitorAbstract
         }
 
         $name = $child->getName();
-        $lowered = strtolower($name);
-        $this->map[$lowered] = $name;
+        $lower = strtolower($name);
+        $this->map[$lower] = $name;
 
         foreach ($parents as $parent) {
             $lowerParent = strtolower($parent->getName());
-            $this->children[$lowerParent][] = $lowered;
+            $this->children[$lowerParent][] = $lower;
 
             if (!isset($this->map[$lowerParent])) {
                 $newParents[] = $parent;
@@ -135,7 +150,7 @@ class ClassCollector extends NodeVisitorAbstract
         } elseif ($node instanceof Node\Stmt\Use_) {
             return $this->addAliases($node->uses, $node->type, '');
         } elseif ($node instanceof Node\Stmt\GroupUse) {
-            return $this->addAliases($node->uses, $node->type, $node->prefix);
+            return $this->addAliases($node->uses, $node->type, $node->prefix->toString());
         } elseif ($node instanceof Node\Stmt\Class_) {
             if ($node->name === null) {
                 return NodeTraverser::DONT_TRAVERSE_CHILDREN;
@@ -153,22 +168,20 @@ class ClassCollector extends NodeVisitorAbstract
         } elseif ($node instanceof Node\Stmt\Trait_) {
             return $this->collect($node, Scanner::T_TRAIT, $this->getTraits($node->stmts));
         }
-
-        return null;
     }
 
     /**
      * @param Node\Stmt\UseUse[] $uses
      * @param int $type
-     * @param string|null $prefix
-     * @return int|null
+     * @param string $prefix
+     * @return int
      */
-    private function addAliases(array $uses, int $type, string $prefix): ?int
+    private function addAliases(array $uses, int $type, string $prefix): int
     {
         foreach ($uses as $use) {
             $this->context->addAlias(
                 $prefix ? Node\Name::concat($prefix, $use->name) : $use->name,
-                $use->getAlias(),
+                $use->getAlias()->toString(),
                 $use->type | $type,
                 $use->getAttributes()
             );
@@ -200,21 +213,21 @@ class ClassCollector extends NodeVisitorAbstract
      * @param Node\Name[] $parents
      * @return int
      */
-    private function collect(Node\Stmt\ClassLike $node, int $type, array $parents): ?int
+    private function collect(Node\Stmt\ClassLike $node, int $type, array $parents): int
     {
-        $name = Node\Name\FullyQualified::concat($this->context->getNamespace(), $node->name->toString());
-        $lower = $name->toLowerString();
+        $name = $this->resolveName($node->name)->toString();
+        $lower = strtolower($name);
 
         if (!isset($this->types[$lower])) {
             $this->types[$lower] = 0;
         }
 
-        $this->map[$lower] = $name->toString();
+        $this->collected[] = $name;
+        $this->map[$lower] = $name;
         $this->types[$lower] |= $type;
-        $this->collected[$lower] = true;
 
         foreach ($parents as $parent) {
-            $parentName = $this->context->getResolvedClassName($parent);
+            $parentName = $this->resolveName($parent);
             $lowerParent = $parentName->toLowerString();
 
             $this->children[$lowerParent][] = $lower;
@@ -225,5 +238,18 @@ class ClassCollector extends NodeVisitorAbstract
         }
 
         return NodeTraverser::DONT_TRAVERSE_CHILDREN;
+    }
+
+    /**
+     * @param Node\Identifier|Node\Name $name
+     * @return Node\Name\FullyQualified
+     */
+    private function resolveName($name): Node\Name\FullyQualified
+    {
+        if ($name instanceof Node\Identifier) {
+            return Node\Name\FullyQualified::concat($this->context->getNamespace(), $name->toString());
+        }
+
+        return $this->context->getResolvedClassName($name);
     }
 }

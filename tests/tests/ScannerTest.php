@@ -61,7 +61,8 @@ class ScannerTest extends TestCase
     public function testHierarchy(): void
     {
         $scanner = new Scanner();
-        $scanner->parse(<<<PHPCODE
+        $scanner->parse(
+            <<<'PHP'
 <?php
 
 interface ParentOnlyInterface extends Throwable { }
@@ -72,7 +73,7 @@ trait ParentTrait { }
 trait ChildTrait { use ParentTrait; }
 abstract class ParentException extends Exception implements ParentOnlyInterface { use ParentOnlyTrait; }
 class ChildException extends ParentException implements ChildInterface { use ChildTrait; } 
-PHPCODE
+PHP
 );
 
         $this->assertValues([
@@ -83,7 +84,7 @@ PHPCODE
             'ParentTrait',
             'ChildTrait',
             'ParentException',
-            'ChildException'
+            'ChildException',
         ], $scanner->getClasses());
 
         $this->assertValues(['ChildException'], $scanner->getClasses(Scanner::T_CLASS));
@@ -135,7 +136,8 @@ PHPCODE
     public function testComplexParsing(): void
     {
         $scanner = new Scanner();
-        $scanner->parse(<<<PHP
+        $scanner->parse(
+            <<<'PHP'
 <?php
 namespace Foo;
 class FooClass { }
@@ -144,10 +146,14 @@ use Foo\FooClass as ClassFromFoo;
 use Foo\{FooClass as Foos};
 if (true) { class BarClass extends ClassFromFoo { }}
 if (true) { class BarBarClass extends Foos { }}
+class FooBarClass extends \Foo\FooClass { }
 PHP
 );
 
-        $this->assertValues(['Bar\BarClass', 'Bar\BarBarClass'], $scanner->getSubClasses('Foo\FooClass'));
+        $this->assertValues(
+            ['Bar\BarClass', 'Bar\BarBarClass', 'Bar\FooBarClass'],
+            $scanner->getSubClasses('Foo\FooClass')
+        );
     }
 
     public function testNoAnonymousClasses(): void
@@ -200,7 +206,7 @@ PHP
         $scanner = new Scanner();
         $scanner->scan([
             TEST_FILES_DIRECTORY . '/TopClass.php',
-            new \SplFileInfo(TEST_FILES_DIRECTORY . '/sub/SubClass.php')
+            new \SplFileInfo(TEST_FILES_DIRECTORY . '/sub/SubClass.php'),
         ]);
 
         $this->assertValues([TopClass::class, SubClass::class], $scanner->getClasses());
@@ -264,7 +270,7 @@ PHP
             $scanner = new Scanner();
             $scanner->parse("<?php class Foo Extends $class { }");
             $scanner->getSubClasses($class);
-        } Catch (ClassScannerException $exception) {
+        } catch (ClassScannerException $exception) {
             $result = $exception;
         } finally {
             spl_autoload_unregister([$autoloader, 'autoload']);
@@ -297,6 +303,6 @@ PHP
         sort($expected);
         sort($actual);
 
-        self::assertThat($actual, new IsIdentical($expected), $message);
+        $this->assertThat($actual, new IsIdentical($expected), $message);
     }
 }

@@ -15,9 +15,9 @@ use Violet\ClassScanner\Exception\FileNotFoundException;
 class Scanner
 {
     public const T_CLASS = 1;
-    public const T_ABSTRACT = 1 << 1;
-    public const T_INTERFACE = 1 << 2;
-    public const T_TRAIT = 1 << 3;
+    public const T_ABSTRACT = 2;
+    public const T_INTERFACE = 4;
+    public const T_TRAIT = 8;
     public const T_ALL = self::T_CLASS | self::T_ABSTRACT | self::T_INTERFACE | self::T_TRAIT;
 
     private $parser;
@@ -79,35 +79,29 @@ class Scanner
         $map = $this->collector->getMap();
         $children = $this->collector->getChildren();
         $types = $this->collector->getTypes();
-        $lowered = strtolower($class);
-        $lists = [$children[$lowered] ?? []];
-        $traversed = [];
+        $traverse = array_flip($children[strtolower($class)] ?? []);
+        $count = \count($traverse);
         $classes = [];
 
-        do {
-            foreach (array_pop($lists) as $name) {
-                if (isset($traversed[$name])) {
-                    continue;
-                }
+        for ($i = 0; $i < $count; $i++) {
+            $name = key(\array_slice($traverse, $i, 1));
 
-                $traversed[$name] = true;
-
-                if (isset($types[$name]) && $types[$name] & $filter) {
-                    $classes[] = $map[$name];
-                }
-
-                if (isset($children[$name])) {
-                    $lists[] = $children[$name];
-                }
+            if (isset($types[$name]) && $types[$name] & $filter) {
+                $classes[] = $map[$name];
             }
-        } while ($lists);
+
+            if (isset($children[$name])) {
+                $traverse += array_flip($children[$name]);
+                $count = \count($traverse);
+            }
+        }
 
         return $classes;
     }
 
     public function getFiles(array $classes): array
     {
-        $classes = array_change_key_case(array_flip($classes), CASE_LOWER);
+        $classes = array_change_key_case(array_flip($classes), \CASE_LOWER);
         $files = array_values(array_intersect_key($this->files, $classes));
 
         if (! $files) {
@@ -117,17 +111,17 @@ class Scanner
         return array_keys(array_flip(array_merge(... $files)));
     }
 
-    public function scanFile(string $filename): Scanner
+    public function scanFile(string $filename): self
     {
         return $this->scan([$filename]);
     }
 
-    public function scanDirectory(string $directory): Scanner
+    public function scanDirectory(string $directory): self
     {
         return $this->scan(new \DirectoryIterator($directory));
     }
 
-    public function scan(iterable $files): Scanner
+    public function scan(iterable $files): self
     {
         foreach ($files as $file) {
             if (!$file instanceof \SplFileInfo) {
