@@ -20,11 +20,22 @@ class Scanner
     public const T_TRAIT = 8;
     public const T_ALL = self::T_CLASS | self::T_ABSTRACT | self::T_INTERFACE | self::T_TRAIT;
 
+    /** @var \PhpParser\Parser */
     private $parser;
+
+    /** @var NodeTraverser */
     private $traverser;
+
+    /** @var ClassCollector */
     private $collector;
+
+    /** @var bool */
     private $ignore;
+
+    /** @var bool */
     private $autoload;
+
+    /** @var array[] */
     private $files;
 
     public function __construct()
@@ -50,7 +61,7 @@ class Scanner
         return $this;
     }
 
-    public function getClasses($filter = self::T_ALL): array
+    public function getClasses(int $filter = self::T_ALL): array
     {
         $map = $this->collector->getMap();
         $types = $this->collector->getTypes();
@@ -99,6 +110,10 @@ class Scanner
         return $classes;
     }
 
+    /**
+     * @param string[] $classes
+     * @return string[]
+     */
     public function getFiles(array $classes): array
     {
         $classes = array_change_key_case(array_flip($classes), \CASE_LOWER);
@@ -121,6 +136,11 @@ class Scanner
         return $this->scan(new \DirectoryIterator($directory));
     }
 
+    /**
+     * @param iterable|string[]|\SplFileInfo[] $files
+     * @return Scanner
+     * @throws FileNotFoundException
+     */
     public function scan(iterable $files): self
     {
         foreach ($files as $file) {
@@ -142,6 +162,10 @@ class Scanner
         return $this;
     }
 
+    /**
+     * @param string $code
+     * @return string[]
+     */
     public function parse(string $code): array
     {
         $this->traverser->traverse($this->parser->parse($code));

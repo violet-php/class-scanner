@@ -45,21 +45,33 @@ class ClassCollector extends NodeVisitorAbstract
         $this->collected = [];
     }
 
+    /**
+     * @return string[]
+     */
     public function getMap(): array
     {
         return $this->map;
     }
 
+    /**
+     * @return array[]
+     */
     public function getChildren(): array
     {
         return $this->children;
     }
 
+    /**
+     * @return int[]
+     */
     public function getTypes(): array
     {
         return $this->types;
     }
 
+    /**
+     * @return string[]
+     */
     public function getCollected(): array
     {
         return $this->collected;
