@@ -17,8 +17,14 @@ use Violet\ClassScanner\Exception\UndefinedClassException;
  */
 class ClassCollector extends NodeVisitorAbstract
 {
-    /** @var NameContext */
-    private $context;
+    /** @var NameResolver */
+    private $resolver;
+
+    /** @var DefinitionFactory */
+    private $factory;
+
+    /** @var array[] */
+    private $definitions;
 
     /** @var string[] */
     private $map;
@@ -32,17 +38,30 @@ class ClassCollector extends NodeVisitorAbstract
     /** @var int[] */
     private $types;
 
-    /** @var string[] */
+    /** @var TypeDefinition[] */
     private $collected;
+
+    /** @var string|null */
+    private $currentFile;
 
     public function __construct()
     {
-        $this->context = new NameContext(new Throwing());
+        $this->resolver = new NameResolver(new NameContext(new Throwing()));
+        $this->factory = new DefinitionFactory($this->resolver);
         $this->map = [];
         $this->children = [];
         $this->parentNames = [];
         $this->types = [];
         $this->collected = [];
+        $this->definitions = [];
+    }
+
+    /**
+     * @return array[]
+     */
+    public function getDefnitions(): array
+    {
+        return $this->definitions;
     }
 
     /**
@@ -70,20 +89,24 @@ class ClassCollector extends NodeVisitorAbstract
     }
 
     /**
-     * @return string[]
+     * @return TypeDefinition[]
      */
     public function getCollected(): array
     {
         return $this->collected;
     }
 
-    public function loadMissing(bool $autoload): void
+    public function loadMissing(bool $autoload, bool $ignoreMissing): void
     {
         $missing = array_diff_key($this->parentNames, $this->map);
         $parents = [];
 
         foreach ($missing as $name) {
             if (!$this->definitionExists($name, $autoload)) {
+                if ($ignoreMissing) {
+                    continue;
+                }
+
                 throw new UndefinedClassException("Could not find definition for '$name'");
             }
 
@@ -149,119 +172,63 @@ class ClassCollector extends NodeVisitorAbstract
         return $newParents;
     }
 
+    public function setCurrentFile(?string $filename): void
+    {
+        $this->currentFile = $filename;
+    }
+
+    public function getCurrentFile(): ?string
+    {
+        return $this->currentFile;
+    }
+
     public function beforeTraverse(array $nodes)
     {
-        $this->context->startNamespace();
+        $this->resolver->initialize();
         $this->collected = [];
     }
 
     public function enterNode(Node $node)
     {
         if ($node instanceof Node\Stmt\Namespace_) {
-            $this->context->startNamespace($node->name);
+            $this->resolver->setNamespace($node);
         } elseif ($node instanceof Node\Stmt\Use_) {
-            return $this->addAliases($node->uses, $node->type, '');
+            $this->resolver->addUseStatement($node);
         } elseif ($node instanceof Node\Stmt\GroupUse) {
-            return $this->addAliases($node->uses, $node->type, $node->prefix->toString());
-        } elseif ($node instanceof Node\Stmt\Class_) {
-            if ($node->name === null) {
-                return NodeTraverser::DONT_TRAVERSE_CHILDREN;
+            $this->resolver->addGroupUseStatement($node);
+        } elseif ($node instanceof Node\Stmt\ClassLike) {
+            if ($node->name !== null) {
+                $this->collect($this->factory->createFromNode($node));
             }
 
-            $parents = array_merge(
-                array_values($node->implements),
-                $node->extends ? [$node->extends] : [],
-                $this->getTraits($node->stmts)
-            );
-
-            return $this->collect($node, $node->isAbstract() ? Scanner::T_ABSTRACT : Scanner::T_CLASS, $parents);
-        } elseif ($node instanceof Node\Stmt\Interface_) {
-            return $this->collect($node, Scanner::T_INTERFACE, $node->extends);
-        } elseif ($node instanceof Node\Stmt\Trait_) {
-            return $this->collect($node, Scanner::T_TRAIT, $this->getTraits($node->stmts));
+            return NodeTraverser::DONT_TRAVERSE_CHILDREN;
         }
     }
 
-    /**
-     * @param Node\Stmt\UseUse[] $uses
-     * @param int $type
-     * @param string $prefix
-     * @return int
-     */
-    private function addAliases(array $uses, int $type, string $prefix): int
+    private function collect(TypeDefinition $definition): int
     {
-        foreach ($uses as $use) {
-            $this->context->addAlias(
-                $prefix ? Node\Name::concat($prefix, $use->name) : $use->name,
-                $use->getAlias()->toString(),
-                $use->type | $type,
-                $use->getAttributes()
-            );
-        }
-
-        return NodeTraverser::DONT_TRAVERSE_CHILDREN;
-    }
-
-    /**
-     * @param Node\Stmt[] $statements
-     * @return Node\Name[]
-     */
-    private function getTraits(array $statements): array
-    {
-        $traits = [];
-
-        foreach ($statements as $statement) {
-            if ($statement instanceof Node\Stmt\TraitUse && $statement->traits) {
-                array_push($traits, ... array_values($statement->traits));
-            }
-        }
-
-        return $traits;
-    }
-
-    /**
-     * @param Node\Stmt\ClassLike $node
-     * @param int $type
-     * @param Node\Name[] $parents
-     * @return int
-     */
-    private function collect(Node\Stmt\ClassLike $node, int $type, array $parents): int
-    {
-        $name = $this->resolveName($node->name)->toString();
-        $lower = strtolower($name);
+        $definition = $definition->withFilename($this->currentFile);
+        $lower = strtolower($definition->getName());
 
         if (!isset($this->types[$lower])) {
             $this->types[$lower] = 0;
         }
 
-        $this->collected[] = $name;
-        $this->map[$lower] = $name;
-        $this->types[$lower] |= $type;
+        $this->collected[] = $definition;
+        $this->definitions[$lower][] = $definition;
+        $this->map[$lower] = $definition->getName();
+        $this->types[$lower] |= $definition->getType();
 
-        foreach ($parents as $parent) {
-            $parentName = $this->resolveName($parent);
-            $lowerParent = $parentName->toLowerString();
+        foreach ($definition->getAllNames() as $parent) {
+            $lowerParent = strtolower($parent);
 
             $this->children[$lowerParent][] = $lower;
 
             if (!isset($this->map[$lowerParent], $this->parentNames[$lowerParent])) {
-                $this->parentNames[$lowerParent] = $parentName->toString();
+                $this->parentNames[$lowerParent] = $parent;
             }
         }
 
         return NodeTraverser::DONT_TRAVERSE_CHILDREN;
-    }
-
-    /**
-     * @param Node\Identifier|Node\Name $name
-     * @return Node\Name\FullyQualified
-     */
-    private function resolveName($name): Node\Name\FullyQualified
-    {
-        if ($name instanceof Node\Identifier) {
-            return Node\Name\FullyQualified::concat($this->context->getNamespace(), $name->toString());
-        }
-
-        return $this->context->getResolvedClassName($name);
     }
 }

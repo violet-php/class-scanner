@@ -10,6 +10,7 @@ use Sample\Space\SubClass;
 use Sample\Space\TopClass;
 use Violet\ClassScanner\Exception\ClassScannerException;
 use Violet\ClassScanner\Exception\FileNotFoundException;
+use Violet\ClassScanner\Exception\ParsingException;
 use Violet\ClassScanner\Exception\UndefinedClassException;
 use Violet\ClassScanner\Tests\ClassLoader;
 use Violet\ClassScanner\Tests\SampleException;
@@ -26,17 +27,18 @@ class ScannerTest extends TestCase
     public function testBasicClassScanning(): void
     {
         $scanner = new Scanner();
-        $classes = $scanner->parse('<?php class FooBar { }');
+        $definitions = $scanner->parse('<?php class FooBar { }');
 
-        $this->assertValues(['FooBar'], $classes);
+        $this->assertCount(1, $definitions);
+        $this->assertSame('FooBar', reset($definitions)->getName());
         $this->assertValues(['FooBar'], $scanner->getClasses());
-        $this->assertValues(['FooBar'], $scanner->getClasses(Scanner::T_CLASS));
-        $this->assertValues([], $scanner->getClasses(Scanner::T_ABSTRACT));
-        $this->assertValues([], $scanner->getClasses(Scanner::T_INTERFACE));
-        $this->assertValues([], $scanner->getClasses(Scanner::T_TRAIT));
+        $this->assertValues(['FooBar'], $scanner->getClasses(TypeDefinition::TYPE_CLASS));
+        $this->assertValues([], $scanner->getClasses(TypeDefinition::TYPE_ABSTRACT));
+        $this->assertValues([], $scanner->getClasses(TypeDefinition::TYPE_INTERFACE));
+        $this->assertValues([], $scanner->getClasses(TypeDefinition::TYPE_TRAIT));
         $this->assertValues([], $scanner->getSubClasses('FooBar'));
         $this->assertValues([], $scanner->getSubClasses('Foo'));
-        $this->assertValues([], $scanner->getFiles(['FooBar']));
+        $this->assertValues($definitions, $scanner->getDefinitions($scanner->getClasses()));
     }
 
     public function testBasicInheritance(): void
@@ -87,13 +89,26 @@ PHP
             'ChildException',
         ], $scanner->getClasses());
 
-        $this->assertValues(['ChildException'], $scanner->getClasses(Scanner::T_CLASS));
-        $this->assertValues(['ParentException'], $scanner->getClasses(Scanner::T_ABSTRACT));
+        $definitions = $scanner->getDefinitions(['ChildException']);
+        $type = current($definitions);
+
+        $this->assertCount(1, $definitions);
+        $this->assertInstanceOf(TypeDefinition::class, $type);
+        $this->assertSame('ParentException', $type->getParentName());
+        $this->assertValues(['ChildInterface'], $type->getInterfaceNames());
+        $this->assertValues(['ChildTrait'], $type->getTraitNames());
+        $this->assertValues(['ParentException', 'ChildInterface', 'ChildTrait'], $type->getAllNames());
+
+        $this->assertValues(['ChildException'], $scanner->getClasses(TypeDefinition::TYPE_CLASS));
+        $this->assertValues(['ParentException'], $scanner->getClasses(TypeDefinition::TYPE_ABSTRACT));
         $this->assertValues(
             ['ParentOnlyInterface', 'ParentInterface', 'ChildInterface'],
-            $scanner->getClasses(Scanner::T_INTERFACE)
+            $scanner->getClasses(TypeDefinition::TYPE_INTERFACE)
         );
-        $this->assertValues(['ParentOnlyTrait', 'ParentTrait', 'ChildTrait'], $scanner->getClasses(Scanner::T_TRAIT));
+        $this->assertValues(
+            ['ParentOnlyTrait', 'ParentTrait', 'ChildTrait'],
+            $scanner->getClasses(TypeDefinition::TYPE_TRAIT)
+        );
 
         $this->assertValues(['ChildException'], $scanner->getSubClasses('ParentOnlyInterface'));
         $this->assertValues(['ChildException'], $scanner->getSubClasses('ParentInterface'));
@@ -105,31 +120,31 @@ PHP
 
         $this->assertValues(
             ['ParentException', 'ChildException'],
-            $scanner->getSubClasses('ParentOnlyInterface', Scanner::T_ALL)
+            $scanner->getSubClasses('ParentOnlyInterface', TypeDefinition::TYPE_ANY)
         );
         $this->assertValues(
             ['ChildInterface', 'ChildException'],
-            $scanner->getSubClasses('ParentInterface', Scanner::T_ALL)
+            $scanner->getSubClasses('ParentInterface', TypeDefinition::TYPE_ANY)
         );
         $this->assertValues(
             ['ChildException'],
-            $scanner->getSubClasses('ChildInterface', Scanner::T_ALL)
+            $scanner->getSubClasses('ChildInterface', TypeDefinition::TYPE_ANY)
         );
         $this->assertValues(
             ['ParentException', 'ChildException'],
-            $scanner->getSubClasses('ParentOnlyTrait', Scanner::T_ALL)
+            $scanner->getSubClasses('ParentOnlyTrait', TypeDefinition::TYPE_ANY)
         );
         $this->assertValues(
             ['ChildTrait', 'ChildException'],
-            $scanner->getSubClasses('ParentTrait', Scanner::T_ALL)
+            $scanner->getSubClasses('ParentTrait', TypeDefinition::TYPE_ANY)
         );
         $this->assertValues(
             ['ChildException'],
-            $scanner->getSubClasses('ChildTrait', Scanner::T_ALL)
+            $scanner->getSubClasses('ChildTrait', TypeDefinition::TYPE_ANY)
         );
         $this->assertValues(
             ['ChildException'],
-            $scanner->getSubClasses('ParentException', Scanner::T_ALL)
+            $scanner->getSubClasses('ParentException', TypeDefinition::TYPE_ANY)
         );
     }
 
@@ -165,24 +180,14 @@ PHP
 
     public function testReflectionLoading(): void
     {
+        require_once TEST_FILES_DIRECTORY . '/../helpers/SampleException.php';
+        require_once TEST_FILES_DIRECTORY . '/../helpers/SampleTrait.php';
+
         $scanner = new Scanner();
         $scanner->parse('<?php class Foo extends ' . SampleException::class . ' { } ');
-        $scanner->allowAutoloading();
 
         $this->assertValues(['Foo'], $scanner->getSubClasses(\Exception::class));
         $this->assertValues(['Foo'], $scanner->getSubClasses(SampleTrait::class));
-    }
-
-    public function testIgnoreMissingClasses(): void
-    {
-        $scanner = new Scanner();
-        $scanner->parse('<?php class Foo extends LogicException { } class Bar extends Exception { }');
-
-        $scanner->ignoreMissing();
-        $this->assertValues(['Bar'], $scanner->getSubClasses(\Exception::class));
-
-        $scanner->ignoreMissing(false);
-        $this->assertValues(['Foo', 'Bar'], $scanner->getSubClasses(\Exception::class));
     }
 
     public function testParsingFilePath(): void
@@ -191,6 +196,10 @@ PHP
         $scanner->scanFile(TEST_FILES_DIRECTORY . '/TopClass.php');
 
         $this->assertSame([TopClass::class], $scanner->getClasses());
+        $this->assertSame(
+            TEST_FILES_DIRECTORY . '/TopClass.php',
+            current($scanner->getDefinitions([TopClass::class]))->getFilename()
+        );
     }
 
     public function testParsingDirectory(): void
@@ -209,9 +218,15 @@ PHP
             new \SplFileInfo(TEST_FILES_DIRECTORY . '/sub/SubClass.php'),
         ]);
 
+        $paths = array_map(function (TypeDefinition $type): string {
+            return $type->getFilename();
+        }, $scanner->getDefinitions($scanner->getClasses()));
+
         $this->assertValues([TopClass::class, SubClass::class], $scanner->getClasses());
-        $this->assertValues([TEST_FILES_DIRECTORY . '/TopClass.php'], $scanner->getFiles([TopClass::class]));
-        $this->assertValues([TEST_FILES_DIRECTORY . '/sub/SubClass.php'], $scanner->getFiles([SubClass::class]));
+        $this->assertValues([
+            TEST_FILES_DIRECTORY . '/TopClass.php',
+            TEST_FILES_DIRECTORY . '/sub/SubClass.php',
+        ], $paths);
     }
 
     public function testFileNotFoundError(): void
@@ -277,6 +292,43 @@ PHP
         }
 
         $this->assertInstanceOf(UndefinedClassException::class, $result);
+    }
+
+    public function testIgnoreMissingClasses(): void
+    {
+        $class = $this->generateDynamicClass('MissingTest');
+
+        $scanner = new Scanner();
+        $scanner->parse("<?php class Foo Extends $class { }");
+        $scanner->ignoreMissing();
+
+        $this->assertValues(['Foo'], $scanner->getSubClasses($class));
+    }
+
+    public function testParsingErrorInString(): void
+    {
+        $scanner = new Scanner();
+
+        $this->expectException(ParsingException::class);
+        $this->expectExceptionMessage('Error parsing:');
+        $scanner->parse('<?php class foo {');
+    }
+
+    public function testParsingErrorInFile(): void
+    {
+        $scanner = new Scanner();
+
+        $file = tempnam(sys_get_temp_dir(), 'test');
+        file_put_contents($file, '<?php class foo {');
+
+        $this->expectException(ParsingException::class);
+        $this->expectExceptionMessage("Error parsing '$file':");
+
+        try {
+            $scanner->scanFile($file);
+        } finally {
+            unlink($file);
+        }
     }
 
     private function generateDynamicClass($prefix): string

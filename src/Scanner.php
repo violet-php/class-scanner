@@ -4,7 +4,9 @@ namespace Violet\ClassScanner;
 
 use PhpParser\NodeTraverser;
 use PhpParser\ParserFactory;
+use PhpParser\Parser;
 use Violet\ClassScanner\Exception\FileNotFoundException;
+use Violet\ClassScanner\Exception\ParsingException;
 
 /**
  * Scanner.
@@ -14,13 +16,7 @@ use Violet\ClassScanner\Exception\FileNotFoundException;
  */
 class Scanner
 {
-    public const T_CLASS = 1;
-    public const T_ABSTRACT = 2;
-    public const T_INTERFACE = 4;
-    public const T_TRAIT = 8;
-    public const T_ALL = self::T_CLASS | self::T_ABSTRACT | self::T_INTERFACE | self::T_TRAIT;
-
-    /** @var \PhpParser\Parser */
+    /** @var Parser */
     private $parser;
 
     /** @var NodeTraverser */
@@ -35,9 +31,6 @@ class Scanner
     /** @var bool */
     private $autoload;
 
-    /** @var array[] */
-    private $files;
-
     public function __construct()
     {
         $this->ignore = false;
@@ -46,7 +39,6 @@ class Scanner
         $this->parser = (new ParserFactory())->create(ParserFactory::PREFER_PHP7);
         $this->traverser = new NodeTraverser();
         $this->traverser->addVisitor($this->collector);
-        $this->files = [];
     }
 
     public function allowAutoloading(bool $allow = true): self
@@ -61,12 +53,12 @@ class Scanner
         return $this;
     }
 
-    public function getClasses(int $filter = self::T_ALL): array
+    public function getClasses(int $filter = TypeDefinition::TYPE_ANY): array
     {
         $map = $this->collector->getMap();
         $types = $this->collector->getTypes();
 
-        if ($filter === self::T_ALL) {
+        if ($filter === TypeDefinition::TYPE_ANY) {
             return array_values(array_intersect_key($map, $types));
         }
 
@@ -81,11 +73,9 @@ class Scanner
         return $classes;
     }
 
-    public function getSubClasses(string $class, int $filter = self::T_CLASS): array
+    public function getSubClasses(string $class, int $filter = TypeDefinition::TYPE_CLASS): array
     {
-        if (! $this->ignore) {
-            $this->collector->loadMissing($this->autoload);
-        }
+        $this->collector->loadMissing($this->autoload, $this->ignore);
 
         $map = $this->collector->getMap();
         $children = $this->collector->getChildren();
@@ -112,18 +102,22 @@ class Scanner
 
     /**
      * @param string[] $classes
-     * @return string[]
+     * @return TypeDefinition[]
      */
-    public function getFiles(array $classes): array
+    public function getDefinitions(array $classes): array
     {
-        $classes = array_change_key_case(array_flip($classes), \CASE_LOWER);
-        $files = array_values(array_intersect_key($this->files, $classes));
+        $definitions = $this->collector->getDefnitions();
+        $results = [];
 
-        if (! $files) {
-            return [];
+        foreach ($classes as $class) {
+            $class = strtolower($class);
+
+            if (isset($definitions[$class])) {
+                array_push($results, ... $definitions[$class]);
+            }
         }
 
-        return array_keys(array_flip(array_merge(... $files)));
+        return $results;
     }
 
     public function scanFile(string $filename): self
@@ -149,10 +143,12 @@ class Scanner
             }
 
             if ($file->isFile()) {
-                $classes = $this->parse(file_get_contents($file->getPathname()));
+                $this->collector->setCurrentFile($file->getPathname());
 
-                foreach ($classes as $class) {
-                    $this->files[strtolower($class)][] = $file->getPathname();
+                try {
+                    $this->parse(file_get_contents($file->getPathname()));
+                } finally {
+                    $this->collector->setCurrentFile(null);
                 }
             } elseif (! $file->isDir() && ! $file->isLink()) {
                 throw new FileNotFoundException("The file path '$file' does not exist");
@@ -164,11 +160,21 @@ class Scanner
 
     /**
      * @param string $code
-     * @return string[]
+     * @return TypeDefinition[]
+     * @throws ParsingException
      */
     public function parse(string $code): array
     {
-        $this->traverser->traverse($this->parser->parse($code));
+        try {
+            $ast = $this->parser->parse($code);
+        } catch (\Exception $exception) {
+            $message = $this->collector->getCurrentFile()
+                ? sprintf("Error parsing '%s': %s", $this->collector->getCurrentFile(), $exception->getMessage())
+                : sprintf('Error parsing: %s', $exception->getMessage());
+            throw new ParsingException($message, 0, $exception);
+        }
+
+        $this->traverser->traverse($ast);
 
         return $this->collector->getCollected();
     }
