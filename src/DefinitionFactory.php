@@ -13,6 +13,7 @@ use Violet\ClassScanner\Exception\UnexpectedNodeException;
  */
 class DefinitionFactory
 {
+    /** @var NameResolver */
     private $resolver;
 
     public function __construct(NameResolver $resolver)
@@ -30,7 +31,7 @@ class DefinitionFactory
             case $node instanceof Node\Stmt\Trait_:
                 return $this->createTrait($node);
             default:
-                throw new UnexpectedNodeException('Unexpected node for class definition: ' . get_class($node));
+                throw new UnexpectedNodeException('Unexpected node for class definition: ' . \get_class($node));
         }
     }
 

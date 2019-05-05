@@ -3,8 +3,8 @@
 namespace Violet\ClassScanner;
 
 use PhpParser\NodeTraverser;
-use PhpParser\ParserFactory;
 use PhpParser\Parser;
+use PhpParser\ParserFactory;
 use Violet\ClassScanner\Exception\FileNotFoundException;
 use Violet\ClassScanner\Exception\ParsingException;
 
@@ -106,7 +106,7 @@ class Scanner
      */
     public function getDefinitions(array $classes): array
     {
-        $definitions = $this->collector->getDefnitions();
+        $definitions = $this->collector->getDefinitions();
         $results = [];
 
         foreach ($classes as $class) {
@@ -131,15 +131,16 @@ class Scanner
     }
 
     /**
-     * @param iterable|string[]|\SplFileInfo[] $files
+     * @param iterable<string|\SplFileInfo> $files
      * @return Scanner
      * @throws FileNotFoundException
+     * @throws ParsingException
      */
     public function scan(iterable $files): self
     {
         foreach ($files as $file) {
             if (!$file instanceof \SplFileInfo) {
-                $file = new \SplFileInfo($file);
+                $file = new \SplFileInfo((string) $file);
             }
 
             if ($file->isFile()) {
@@ -168,9 +169,10 @@ class Scanner
         try {
             $ast = $this->parser->parse($code);
         } catch (\Exception $exception) {
-            $message = $this->collector->getCurrentFile()
-                ? sprintf("Error parsing '%s': %s", $this->collector->getCurrentFile(), $exception->getMessage())
-                : sprintf('Error parsing: %s', $exception->getMessage());
+            $currentFile = $this->collector->getCurrentFile();
+            $message = $currentFile === null
+                ? sprintf('Error parsing: %s', $exception->getMessage())
+                : sprintf("Error parsing '%s': %s", $currentFile, $exception->getMessage());
             throw new ParsingException($message, 0, $exception);
         }
 

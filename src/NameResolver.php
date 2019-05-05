@@ -14,6 +14,7 @@ use Violet\ClassScanner\Exception\UnexpectedNodeException;
  */
 class NameResolver
 {
+    /** @var NameContext */
     private $context;
 
     public function __construct(NameContext $context)
@@ -45,7 +46,6 @@ class NameResolver
      * @param Node\Stmt\UseUse[] $uses
      * @param int $type
      * @param string $prefix
-     * @return int
      */
     private function addAliases(array $uses, int $type, string $prefix): void
     {
@@ -64,6 +64,11 @@ class NameResolver
         return (string) Node\Name\FullyQualified::concat($this->context->getNamespace(), (string) $node);
     }
 
+    /**
+     * @param Node\Name[] $nodes
+     * @return string[]
+     * @throws UnexpectedNodeException
+     */
     public function resolveNames(iterable $nodes): array
     {
         $names = [];
@@ -85,5 +90,4 @@ class NameResolver
 
         return (string) $name;
     }
-
 }

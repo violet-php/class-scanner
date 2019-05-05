@@ -22,7 +22,7 @@ class DefinitionFactoryTest extends TestCase
         $factory = new DefinitionFactory(new NameResolver(new NameContext(new Throwing())));
 
         $this->expectException(UnexpectedNodeException::class);
-        $factory->createFromNode(new class extends ClassLike {
+        $factory->createFromNode(new class() extends ClassLike {
             public function getType(): string
             {
                 return '';
@@ -32,7 +32,6 @@ class DefinitionFactoryTest extends TestCase
             {
                 return ['name', 'stmts'];
             }
-
         });
     }
 

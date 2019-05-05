@@ -77,17 +77,31 @@ abstract class ParentException extends Exception implements ParentOnlyInterface 
 class ChildException extends ParentException implements ChildInterface { use ChildTrait; } 
 PHP
 );
+        $definitionTypes = [
+            'ParentOnlyInterface' => TypeDefinition::TYPE_INTERFACE,
+            'ParentInterface' => TypeDefinition::TYPE_INTERFACE,
+            'ChildInterface' => TypeDefinition::TYPE_INTERFACE,
+            'ParentOnlyTrait' => TypeDefinition::TYPE_TRAIT,
+            'ParentTrait' => TypeDefinition::TYPE_TRAIT,
+            'ChildTrait' => TypeDefinition::TYPE_TRAIT,
+            'ParentException' => TypeDefinition::TYPE_ABSTRACT,
+            'ChildException' => TypeDefinition::TYPE_CLASS,
+        ];
 
-        $this->assertValues([
-            'ParentOnlyInterface',
-            'ParentInterface',
-            'ChildInterface',
-            'ParentOnlyTrait',
-            'ParentTrait',
-            'ChildTrait',
-            'ParentException',
-            'ChildException',
-        ], $scanner->getClasses());
+        $classes = $scanner->getClasses();
+        $this->assertValues(array_keys($definitionTypes), $classes);
+
+        $definitions = $scanner->getDefinitions($classes);
+        $this->assertCount(\count($definitionTypes), $definitions);
+
+        foreach ($definitions as $definition) {
+            $name = $definition->getName();
+            $this->assertArrayHasKey($name, $definitionTypes);
+            $this->assertSame($definitionTypes[$name], $definition->getType());
+            unset($definitionTypes[$name]);
+        }
+
+        $this->assertCount(0, $definitionTypes);
 
         $definitions = $scanner->getDefinitions(['ChildException']);
         $type = current($definitions);

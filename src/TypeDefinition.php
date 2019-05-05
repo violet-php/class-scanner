@@ -18,16 +18,27 @@ class TypeDefinition
     public const TYPE_TRAIT = 8;
     public const TYPE_ANY = self::TYPE_CLASS | self::TYPE_ABSTRACT | self::TYPE_INTERFACE | self::TYPE_TRAIT;
 
+    /** @var string */
     private $name;
+
+    /** @var int */
     private $type;
+
+    /** @var string|null */
     private $parent;
+
+    /** @var string[] */
     private $interfaces;
+
+    /** @var string[] */
     private $traits;
+
+    /** @var string|null */
     private $filename;
 
     public function __construct(string $name, int $type)
     {
-        if (!in_array($type, [self::TYPE_CLASS, self::TYPE_ABSTRACT, self::TYPE_INTERFACE, self::TYPE_TRAIT], true)) {
+        if (!\in_array($type, [self::TYPE_CLASS, self::TYPE_ABSTRACT, self::TYPE_INTERFACE, self::TYPE_TRAIT], true)) {
             throw new UnexpectedNodeException('Invalid class definition type');
         }
 
@@ -110,12 +121,15 @@ class TypeDefinition
         return $this->traits;
     }
 
+    /**
+     * @return string[]
+     */
     public function getAllNames(): array
     {
         return array_merge(
             $this->parent ? [$this->parent] : [],
             $this->interfaces,
-            $this->traits,
+            $this->traits
         );
     }
 

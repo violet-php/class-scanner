@@ -23,7 +23,7 @@ class ClassCollector extends NodeVisitorAbstract
     /** @var DefinitionFactory */
     private $factory;
 
-    /** @var array[] */
+    /** @var array<array<TypeDefinition>> */
     private $definitions;
 
     /** @var string[] */
@@ -32,7 +32,7 @@ class ClassCollector extends NodeVisitorAbstract
     /** @var string[] */
     private $parentNames;
 
-    /** @var array[] */
+    /** @var array<array<string>> */
     private $children;
 
     /** @var int[] */
@@ -57,9 +57,9 @@ class ClassCollector extends NodeVisitorAbstract
     }
 
     /**
-     * @return array[]
+     * @return array<array<TypeDefinition>>
      */
-    public function getDefnitions(): array
+    public function getDefinitions(): array
     {
         return $this->definitions;
     }
