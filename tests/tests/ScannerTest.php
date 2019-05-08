@@ -345,6 +345,34 @@ PHP
         }
     }
 
+    public function testSkipSameActualFile()
+    {
+        $scanner = new Scanner();
+
+        try {
+            $file = tempnam(sys_get_temp_dir(), 'test');
+            $link = tempnam(sys_get_temp_dir(), 'test');
+
+            unlink($link);
+            file_put_contents($file, '<?php class Foo { }');
+
+            symlink($file, $link);
+
+            $scanner->scanFile($file);
+            $scanner->scanFile($link);
+
+            $this->assertCount(1, $scanner->getDefinitions($scanner->getClasses()));
+        } finally {
+            if (isset($file) && file_exists($file)) {
+                unlink($file);
+            }
+
+            if (isset($link) && file_exists($link)) {
+                unlink($link);
+            }
+        }
+    }
+
     private function generateDynamicClass($prefix): string
     {
         $iteration = 0;

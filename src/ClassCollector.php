@@ -2,51 +2,49 @@
 
 namespace Violet\ClassScanner;
 
-use PhpParser\ErrorHandler\Throwing;
-use PhpParser\NameContext;
 use PhpParser\Node;
 use PhpParser\NodeTraverser;
 use PhpParser\NodeVisitorAbstract;
 use Violet\ClassScanner\Exception\UndefinedClassException;
 
 /**
- * ClassCollector.
+ * A node visitor for collecting class, interface and trait declarations from files
  * @author Riikka Kalliomäki <riikka.kalliomaki@gmail.com>
  * @copyright Copyright (c) 2019 Riikka Kalliomäki
  * @license http://opensource.org/licenses/mit-license.php MIT License
  */
 class ClassCollector extends NodeVisitorAbstract
 {
-    /** @var NameResolver */
+    /** @var NameResolver The name resolver for resolving fully qualified names of types */
     private $resolver;
 
-    /** @var DefinitionFactory */
+    /** @var DefinitionFactory The factory used to create type definitions from nodes */
     private $factory;
 
-    /** @var array<array<TypeDefinition>> */
+    /** @var array<array<TypeDefinition>> List of definitions for each name */
     private $definitions;
 
-    /** @var string[] */
+    /** @var string[] Case sensitive names for each type */
     private $map;
 
-    /** @var string[] */
+    /** @var string[] List of potentially unresolved names of parent types */
     private $parentNames;
 
-    /** @var array<array<string>> */
+    /** @var array<array<string>> Child types for each parent type */
     private $children;
 
-    /** @var int[] */
+    /** @var int[] Types of each name */
     private $types;
 
-    /** @var TypeDefinition[] */
+    /** @var TypeDefinition[] List of type definitions collection from current traversal */
     private $collected;
 
-    /** @var string|null */
+    /** @var string|null Path to the file that we are currently traversing or null for none */
     private $currentFile;
 
     public function __construct()
     {
-        $this->resolver = new NameResolver(new NameContext(new Throwing()));
+        $this->resolver = new NameResolver();
         $this->factory = new DefinitionFactory($this->resolver);
         $this->map = [];
         $this->children = [];
@@ -57,7 +55,8 @@ class ClassCollector extends NodeVisitorAbstract
     }
 
     /**
-     * @return array<array<TypeDefinition>>
+     * All type definitions for each lower cased name.
+     * @return array<array<TypeDefinition>> Type definitions per each lower cased name
      */
     public function getDefinitions(): array
     {
@@ -65,6 +64,7 @@ class ClassCollector extends NodeVisitorAbstract
     }
 
     /**
+     *
      * @return string[]
      */
     public function getMap(): array

@@ -31,6 +31,9 @@ class Scanner
     /** @var bool */
     private $autoload;
 
+    /** @var bool[] */
+    private $scannedFiles;
+
     public function __construct()
     {
         $this->ignore = false;
@@ -39,6 +42,7 @@ class Scanner
         $this->parser = (new ParserFactory())->create(ParserFactory::PREFER_PHP7);
         $this->traverser = new NodeTraverser();
         $this->traverser->addVisitor($this->collector);
+        $this->scannedFiles = [];
     }
 
     public function allowAutoloading(bool $allow = true): self
@@ -144,10 +148,17 @@ class Scanner
             }
 
             if ($file->isFile()) {
-                $this->collector->setCurrentFile($file->getPathname());
+                $real = $file->getRealPath();
+
+                if (isset($this->scannedFiles[$real])) {
+                    continue;
+                }
+
+                $this->collector->setCurrentFile($real);
 
                 try {
-                    $this->parse(file_get_contents($file->getPathname()));
+                    $this->parse(file_get_contents($real));
+                    $this->scannedFiles[$real] = true;
                 } finally {
                     $this->collector->setCurrentFile(null);
                 }
